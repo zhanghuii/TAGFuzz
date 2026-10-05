@@ -1,0 +1,41 @@
+model:
+  backend: echo
+  name: ""
+  temperature: 0.8
+  max_new_tokens: 2048
+  context_length: 8192
+  batch_size: 1
+  gpu_devices: [0]
+
+runner:
+  work_dir: ./runs/tagfuzz-fse20-smoke
+  command_cwd: ..
+  compile_command:
+    - bash
+    - ./scripts/go-compile.sh
+    - "{work_dir}"
+    - "{source}"
+    - "{case_id}"
+  coverage_command:
+    - bash
+    - ./scripts/go-coverage-json.sh
+    - "{work_dir}"
+    - "{case_id}"
+  timeout_seconds: 1200
+
+tagfuzz:
+  targets_file: ../targets/go/fse20.yaml
+  target_ids:
+    - ssa_decompose_slice_phi
+  candidate_group_size: 8
+  calls_budget: 16
+  time_budget_seconds: 0
+  alpha: 1.0
+  beta: 0.5
+  regression_lambda: 0.5
+  feedback_examples: 3
+  grpo_enabled: false
+  grpo_output: grpo/updates.jsonl
+  seed_program: |
+    package main
+    func main() {}

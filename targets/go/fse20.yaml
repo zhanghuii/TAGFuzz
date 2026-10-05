@@ -1,0 +1,555 @@
+targets:
+  - id: checker_instantiated_type
+    name: "(*Checker).instantiatedType"
+    language: go
+    source: {file: "cmd/compile/internal/types2/typexpr.go", start_line: 1, end_line: 900}
+    requirement: "Instantiate a generic named type such as Box[int]."
+    metadata: {d_min: 12, internal_conditions: 1, component: "types2"}
+    activation_graph:
+      nodes:
+        - id: c_generic_named_type
+          kind: requirement
+          description: "program declares and instantiates a generic named type"
+          rule: {all_features: ["type:generic_type"], source_regex: "\\[[^\\]]+\\]"}
+          guidance: "Declare a parameterized type and instantiate it with concrete type arguments."
+        - id: i_instantiation
+          kind: condition
+          description: "frontend observes a generic type instantiation"
+          rule: {all_features: ["type:generic_type", "phase:types2_likely"]}
+        - id: t_target
+          kind: target
+          description: "Checker.instantiatedType executes"
+          source: {file: "cmd/compile/internal/types2/typexpr.go", start_line: 1, end_line: 900}
+      edges:
+        - {from: c_generic_named_type, to: i_instantiation}
+        - {from: i_instantiation, to: t_target}
+
+  - id: reader_func_inst
+    name: "(*reader).funcInst"
+    language: go
+    source: {file: "cmd/compile/internal/noder/reader.go", start_line: 1, end_line: 4000}
+    requirement: "Use an instantiated generic function or generic function value."
+    metadata: {d_min: 8, internal_conditions: 4, component: "noder"}
+    activation_graph:
+      nodes:
+        - id: c_generic_func
+          kind: requirement
+          description: "program declares and calls a generic function"
+          rule: {all_features: ["type:generic_func"]}
+          guidance: "Create a generic helper and call it with concrete type arguments."
+        - id: i_dictionary_needed
+          kind: condition
+          description: "instantiation requires generic function dictionary data"
+          rule: {all_features: ["type:generic_func", "phase:types2_likely"]}
+        - id: a_reader_func_inst
+          kind: callsite
+          description: "reader reaches funcInst callsite"
+          source: {file: "cmd/compile/internal/noder/reader.go", start_line: 1, end_line: 4000}
+        - id: t_target
+          kind: target
+          description: "reader.funcInst executes"
+          source: {file: "cmd/compile/internal/noder/reader.go", start_line: 1, end_line: 4000}
+      edges:
+        - {from: c_generic_func, to: i_dictionary_needed}
+        - {from: i_dictionary_needed, to: a_reader_func_inst}
+        - {from: a_reader_func_inst, to: t_target}
+
+  - id: ssagen_dynamic_dottype
+    name: "(*state).dynamicDottype"
+    language: go
+    source: {file: "cmd/compile/internal/ssagen/ssa.go", start_line: 1, end_line: 8000}
+    requirement: "Perform an interface assertion involving a type parameter."
+    metadata: {d_min: 9, internal_conditions: 7, component: "ssagen"}
+    activation_graph:
+      nodes:
+        - id: c_interface_assert
+          kind: requirement
+          description: "program includes interface/type assertion constructs"
+          rule: {all_features: ["type:interface"], source_regex: "\\.\\([^\\)]+\\)"}
+        - id: c_generic_context
+          kind: requirement
+          description: "assertion appears in generic code"
+          rule: {any_features: ["type:generic_func", "type:generic_type"]}
+        - id: i_dynamic_assertion
+          kind: condition
+          description: "ssagen needs dynamic type assertion lowering"
+          rule: {all_features: ["type:interface", "phase:types2_likely"]}
+        - id: t_target
+          kind: target
+          description: "state.dynamicDottype executes"
+          source: {file: "cmd/compile/internal/ssagen/ssa.go", start_line: 1, end_line: 8000}
+      edges:
+        - {from: c_interface_assert, to: i_dynamic_assertion}
+        - {from: c_generic_context, to: i_dynamic_assertion}
+        - {from: i_dynamic_assertion, to: t_target}
+
+  - id: ssa_decompose_interface_phi
+    name: "decomposeInterfacePhi"
+    language: go
+    source: {file: "cmd/compile/internal/ssa/decompose.go", start_line: 1, end_line: 1200}
+    requirement: "Merge interface values across branches and use the merged result."
+    metadata: {d_min: 11, internal_conditions: 4, component: "ssa"}
+    activation_graph:
+      nodes:
+        - id: c_branch_merge
+          kind: requirement
+          description: "control-flow branches assign different values to one variable"
+          rule: {all_features: ["ctrl:branch_merge"]}
+        - id: c_interface_value
+          kind: requirement
+          description: "merged value has interface type"
+          rule: {all_features: ["type:interface"]}
+        - id: i_phi_interface
+          kind: condition
+          description: "SSA value is an interface-typed Phi"
+          rule: {all_features: ["ctrl:branch_merge", "type:interface", "phase:ssa_likely"]}
+        - id: t_target
+          kind: target
+          description: "decomposeInterfacePhi executes"
+          source: {file: "cmd/compile/internal/ssa/decompose.go", start_line: 1, end_line: 1200}
+      edges:
+        - {from: c_branch_merge, to: i_phi_interface}
+        - {from: c_interface_value, to: i_phi_interface}
+        - {from: i_phi_interface, to: t_target}
+
+  - id: ssa_decompose_slice_phi
+    name: "decomposeSlicePhi"
+    language: go
+    source: {file: "cmd/compile/internal/ssa/decompose.go", start_line: 1, end_line: 1200}
+    requirement: "Merge slice values across branches and use the merged result."
+    metadata: {d_min: 11, internal_conditions: 4, component: "ssa"}
+    activation_graph:
+      nodes:
+        - id: c_branch_merge
+          kind: requirement
+          description: "branches define different values that merge after control flow"
+          rule: {all_features: ["ctrl:branch_merge"]}
+          guidance: "Assign one slice in the if branch and another slice in the else branch, then use it."
+        - id: c_slice_value
+          kind: requirement
+          description: "merged value has slice type"
+          rule: {all_features: ["expr:slice"]}
+          guidance: "Use []T values or slice expressions in both branches."
+        - id: i_phi_slice
+          kind: condition
+          description: "SSA value satisfies OpPhi and Type.IsSlice"
+          rule: {all_features: ["ctrl:branch_merge", "expr:slice", "phase:ssa_likely"]}
+        - id: a_decompose_builtin_phi
+          kind: callsite
+          description: "decomposeBuiltInPhi reaches slice dispatch"
+          source: {file: "cmd/compile/internal/ssa/decompose.go", start_line: 1, end_line: 1200}
+        - id: t_target
+          kind: target
+          description: "decomposeSlicePhi executes"
+          source: {file: "cmd/compile/internal/ssa/decompose.go", start_line: 1, end_line: 1200}
+      edges:
+        - {from: c_branch_merge, to: i_phi_slice}
+        - {from: c_slice_value, to: i_phi_slice}
+        - {from: i_phi_slice, to: a_decompose_builtin_phi}
+        - {from: a_decompose_builtin_phi, to: t_target}
+
+  - id: walk_make_slice_copy
+    name: "walkMakeSliceCopy"
+    language: go
+    source: {file: "cmd/compile/internal/walk/builtin.go", start_line: 1, end_line: 1500}
+    requirement: "Use a matching make/copy pattern satisfying escape conditions."
+    metadata: {d_min: 9, internal_conditions: 5, component: "walk"}
+    activation_graph:
+      nodes:
+        - id: c_make_slice
+          kind: requirement
+          description: "program constructs slices with make"
+          rule: {all_features: ["expr:make"]}
+        - id: c_copy_slice
+          kind: requirement
+          description: "program copies between compatible slices"
+          rule: {all_features: ["expr:copy"]}
+        - id: i_make_copy_pattern
+          kind: condition
+          description: "walk identifies make/copy slice lowering opportunity"
+          rule: {all_features: ["expr:make", "expr:copy", "expr:slice"]}
+        - id: t_target
+          kind: target
+          description: "walkMakeSliceCopy executes"
+          source: {file: "cmd/compile/internal/walk/builtin.go", start_line: 1, end_line: 1500}
+      edges:
+        - {from: c_make_slice, to: i_make_copy_pattern}
+        - {from: c_copy_slice, to: i_make_copy_pattern}
+        - {from: i_make_copy_pattern, to: t_target}
+
+  - id: walk_map_clear
+    name: "mapClear"
+    language: go
+    source: {file: "cmd/compile/internal/walk/range.go", start_line: 1, end_line: 1200}
+    requirement: "Use a range/delete loop that clears entries from the same map."
+    metadata: {d_min: 8, internal_conditions: 10, component: "walk"}
+    activation_graph:
+      nodes:
+        - id: c_map_range
+          kind: requirement
+          description: "program ranges over a map"
+          rule: {all_features: ["type:map", "ctrl:range_map"]}
+        - id: c_delete_same_map
+          kind: requirement
+          description: "range body deletes from the ranged map"
+          rule: {all_features: ["expr:delete"], source_regex: "delete\\s*\\("}
+        - id: i_clear_pattern
+          kind: condition
+          description: "walk recognizes map clear idiom"
+          rule: {all_features: ["type:map", "ctrl:range_map", "expr:delete"]}
+        - id: t_target
+          kind: target
+          description: "mapClear executes"
+          source: {file: "cmd/compile/internal/walk/range.go", start_line: 1, end_line: 1200}
+      edges:
+        - {from: c_map_range, to: i_clear_pattern}
+        - {from: c_delete_same_map, to: i_clear_pattern}
+        - {from: i_clear_pattern, to: t_target}
+
+  - id: ssagen_open_defer_record
+    name: "(*state).openDeferRecord"
+    language: go
+    source: {file: "cmd/compile/internal/ssagen/ssa.go", start_line: 1, end_line: 8000}
+    requirement: "Use non-loop defer statements with limited defer and return."
+    metadata: {d_min: 10, internal_conditions: 11, component: "ssagen"}
+    activation_graph:
+      nodes:
+        - id: c_defer
+          kind: requirement
+          description: "program contains defer statements"
+          rule: {all_features: ["ctrl:defer"]}
+        - id: c_no_loop_defer
+          kind: requirement
+          description: "defer appears in ordinary function control flow"
+          rule: {source_regex: "defer\\s+[A-Za-z_\\(]"}
+        - id: i_open_defer_allowed
+          kind: condition
+          description: "ssagen chooses open-coded defer"
+          rule: {all_features: ["ctrl:defer", "phase:ssa_likely"]}
+        - id: t_target
+          kind: target
+          description: "state.openDeferRecord executes"
+          source: {file: "cmd/compile/internal/ssagen/ssa.go", start_line: 1, end_line: 8000}
+      edges:
+        - {from: c_defer, to: i_open_defer_allowed}
+        - {from: c_no_loop_defer, to: i_open_defer_allowed}
+        - {from: i_open_defer_allowed, to: t_target}
+
+  - id: walk_direct_closure_call
+    name: "directClosureCall"
+    language: go
+    source: {file: "cmd/compile/internal/walk/closure.go", start_line: 1, end_line: 1200}
+    requirement: "Immediately invoke a function literal."
+    metadata: {d_min: 10, internal_conditions: 3, component: "walk"}
+    activation_graph:
+      nodes:
+        - id: c_iife
+          kind: requirement
+          description: "program immediately calls a function literal"
+          rule: {all_features: ["ctrl:closure"], source_regex: "func\\s*\\([^)]*\\)\\s*(?:[^{]*)\\{[\\s\\S]*\\}\\s*\\("}
+        - id: i_direct_closure
+          kind: condition
+          description: "walk can rewrite closure to direct call"
+          rule: {all_features: ["ctrl:closure"]}
+        - id: t_target
+          kind: target
+          description: "directClosureCall executes"
+          source: {file: "cmd/compile/internal/walk/closure.go", start_line: 1, end_line: 1200}
+      edges:
+        - {from: c_iife, to: i_direct_closure}
+        - {from: i_direct_closure, to: t_target}
+
+  - id: escape_flow_closure
+    name: "(*batch).flowClosure"
+    language: go
+    source: {file: "cmd/compile/internal/escape/escape.go", start_line: 1, end_line: 2000}
+    requirement: "Include a function literal processed by escape analysis."
+    metadata: {d_min: 6, internal_conditions: 1, component: "escape"}
+    activation_graph:
+      nodes:
+        - id: c_closure
+          kind: requirement
+          description: "program contains closure capturing or using outer values"
+          rule: {all_features: ["ctrl:closure"]}
+        - id: i_escape_closure
+          kind: condition
+          description: "escape analysis visits closure flow"
+          rule: {all_features: ["ctrl:closure", "phase:escape_likely"]}
+        - id: t_target
+          kind: target
+          description: "batch.flowClosure executes"
+          source: {file: "cmd/compile/internal/escape/escape.go", start_line: 1, end_line: 2000}
+      edges:
+        - {from: c_closure, to: i_escape_closure}
+        - {from: i_escape_closure, to: t_target}
+
+  - id: checker_infer_b
+    name: "(*Checker).inferB"
+    language: go
+    source: {file: "cmd/compile/internal/types2/infer.go", start_line: 1, end_line: 1400}
+    requirement: "Use generic constraints requiring type argument inference."
+    metadata: {d_min: 15, internal_conditions: 6, component: "types2"}
+    activation_graph:
+      nodes:
+        - id: c_infer_call
+          kind: requirement
+          description: "call generic function without explicit type arguments"
+          rule: {all_features: ["type:generic_func"], source_regex: "[A-Za-z_]\\w*\\s*\\("}
+        - id: c_constraints
+          kind: requirement
+          description: "generic code uses interface constraints"
+          rule: {any_features: ["type:interface", "type:tilde_constraint"]}
+        - id: i_type_inference
+          kind: condition
+          description: "type checker needs inferB"
+          rule: {all_features: ["type:generic_func", "phase:types2_likely"]}
+        - id: t_target
+          kind: target
+          description: "Checker.inferB executes"
+          source: {file: "cmd/compile/internal/types2/infer.go", start_line: 1, end_line: 1400}
+      edges:
+        - {from: c_infer_call, to: i_type_inference}
+        - {from: c_constraints, to: i_type_inference}
+        - {from: i_type_inference, to: t_target}
+
+  - id: types2_compute_union_type_set
+    name: "computeUnionTypeSet"
+    language: go
+    source: {file: "cmd/compile/internal/types2/typeset.go", start_line: 1, end_line: 1200}
+    requirement: "Declare and use a union type constraint."
+    metadata: {d_min: 10, internal_conditions: 8, component: "types2"}
+    activation_graph:
+      nodes:
+        - id: c_union_constraint
+          kind: requirement
+          description: "interface constraint contains union terms"
+          rule: {all_features: ["type:interface"], source_regex: "\\|"}
+        - id: c_tilde_terms
+          kind: requirement
+          description: "constraint may contain tilde type set terms"
+          rule: {any_features: ["type:tilde_constraint", "type:interface"]}
+        - id: i_union_typeset
+          kind: condition
+          description: "types2 computes union type set"
+          rule: {all_features: ["type:interface", "phase:types2_likely"]}
+        - id: t_target
+          kind: target
+          description: "computeUnionTypeSet executes"
+          source: {file: "cmd/compile/internal/types2/typeset.go", start_line: 1, end_line: 1200}
+      edges:
+        - {from: c_union_constraint, to: i_union_typeset}
+        - {from: c_tilde_terms, to: i_union_typeset}
+        - {from: i_union_typeset, to: t_target}
+
+  - id: reader_curry
+    name: "(*reader).curry"
+    language: go
+    source: {file: "cmd/compile/internal/noder/reader.go", start_line: 1, end_line: 4000}
+    requirement: "Use a dictionary-dependent generic function value."
+    metadata: {d_min: 8, internal_conditions: 4, component: "noder"}
+    activation_graph:
+      nodes:
+        - id: c_generic_func_value
+          kind: requirement
+          description: "program stores or passes a generic function instantiation as a value"
+          rule: {all_features: ["type:generic_func"], source_regex: ":=\\s*[A-Za-z_]\\w*\\s*\\["}
+        - id: i_curry_needed
+          kind: condition
+          description: "reader curries generic dictionary arguments"
+          rule: {all_features: ["type:generic_func", "phase:types2_likely"]}
+        - id: t_target
+          kind: target
+          description: "reader.curry executes"
+          source: {file: "cmd/compile/internal/noder/reader.go", start_line: 1, end_line: 4000}
+      edges:
+        - {from: c_generic_func_value, to: i_curry_needed}
+        - {from: i_curry_needed, to: t_target}
+
+  - id: reader_method_expr_wrap
+    name: "(*reader).methodExprWrap"
+    language: go
+    source: {file: "cmd/compile/internal/noder/reader.go", start_line: 1, end_line: 4000}
+    requirement: "Use a promoted method expression with a generic receiver."
+    metadata: {d_min: 8, internal_conditions: 3, component: "noder"}
+    activation_graph:
+      nodes:
+        - id: c_generic_method
+          kind: requirement
+          description: "program declares methods on generic receiver or generic type"
+          rule: {all_features: ["type:method_decl"], any_features: ["type:generic_type", "type:generic_func"]}
+        - id: c_method_expression
+          kind: requirement
+          description: "program uses a method expression"
+          rule: {source_regex: "[A-Za-z_]\\w*(?:\\[[^\\]]+\\])?\\.[A-Za-z_]\\w+"}
+        - id: i_wrap_method_expr
+          kind: condition
+          description: "reader wraps promoted generic method expression"
+          rule: {all_features: ["type:method_decl", "phase:types2_likely"]}
+        - id: t_target
+          kind: target
+          description: "reader.methodExprWrap executes"
+          source: {file: "cmd/compile/internal/noder/reader.go", start_line: 1, end_line: 4000}
+      edges:
+        - {from: c_generic_method, to: i_wrap_method_expr}
+        - {from: c_method_expression, to: i_wrap_method_expr}
+        - {from: i_wrap_method_expr, to: t_target}
+
+  - id: reader_rtti_word
+    name: "(*reader).rttiWord"
+    language: go
+    source: {file: "cmd/compile/internal/noder/reader.go", start_line: 1, end_line: 4000}
+    requirement: "Use generic code requiring runtime type information."
+    metadata: {d_min: 10, internal_conditions: 5, component: "noder"}
+    activation_graph:
+      nodes:
+        - id: c_runtime_type_info
+          kind: requirement
+          description: "generic code uses type assertions, interfaces, or conversions requiring RTTI"
+          rule: {any_features: ["type:generic_func", "type:generic_type"], all_features: ["type:interface"]}
+        - id: i_rtti_word
+          kind: condition
+          description: "reader materializes runtime type word"
+          rule: {all_features: ["type:interface", "phase:types2_likely"]}
+        - id: t_target
+          kind: target
+          description: "reader.rttiWord executes"
+          source: {file: "cmd/compile/internal/noder/reader.go", start_line: 1, end_line: 4000}
+      edges:
+        - {from: c_runtime_type_info, to: i_rtti_word}
+        - {from: i_rtti_word, to: t_target}
+
+  - id: escape_unsafe_value
+    name: "(*escape).unsafeValue"
+    language: go
+    source: {file: "cmd/compile/internal/escape/expr.go", start_line: 1, end_line: 1600}
+    requirement: "Use an unsafe pointer conversion or related unsafe operation."
+    metadata: {d_min: 11, internal_conditions: 7, component: "escape"}
+    activation_graph:
+      nodes:
+        - id: c_unsafe_pointer
+          kind: requirement
+          description: "program imports unsafe and performs pointer conversion"
+          rule: {all_features: ["expr:unsafe_pointer"]}
+        - id: i_escape_unsafe
+          kind: condition
+          description: "escape analysis handles unsafe value"
+          rule: {all_features: ["expr:unsafe_pointer", "phase:escape_likely"]}
+        - id: t_target
+          kind: target
+          description: "escape.unsafeValue executes"
+          source: {file: "cmd/compile/internal/escape/expr.go", start_line: 1, end_line: 1600}
+      edges:
+        - {from: c_unsafe_pointer, to: i_escape_unsafe}
+        - {from: i_escape_unsafe, to: t_target}
+
+  - id: walk_eq_for
+    name: "eqFor"
+    language: go
+    source: {file: "cmd/compile/internal/walk/compare.go", start_line: 1, end_line: 1200}
+    requirement: "Compare large arrays or costly comparable structures."
+    metadata: {d_min: 10, internal_conditions: 7, component: "walk"}
+    activation_graph:
+      nodes:
+        - id: c_large_comparable
+          kind: requirement
+          description: "program compares arrays or comparable structs"
+          rule: {all_features: ["type:large_array"], source_regex: "==|!="}
+        - id: i_eq_helper
+          kind: condition
+          description: "walk requests equality helper for large value"
+          rule: {all_features: ["type:large_array"]}
+        - id: t_target
+          kind: target
+          description: "eqFor executes"
+          source: {file: "cmd/compile/internal/walk/compare.go", start_line: 1, end_line: 1200}
+      edges:
+        - {from: c_large_comparable, to: i_eq_helper}
+        - {from: i_eq_helper, to: t_target}
+
+  - id: ssa_decompose_struct_phi
+    name: "decomposeStructPhi"
+    language: go
+    source: {file: "cmd/compile/internal/ssa/decompose.go", start_line: 1, end_line: 1200}
+    requirement: "Merge struct values across branches and use the merged result."
+    metadata: {d_min: 11, internal_conditions: 7, component: "ssa"}
+    activation_graph:
+      nodes:
+        - id: c_branch_merge
+          kind: requirement
+          description: "branches merge values after control flow"
+          rule: {all_features: ["ctrl:branch_merge"]}
+        - id: c_struct_value
+          kind: requirement
+          description: "merged value is a struct literal or named struct"
+          rule: {all_features: ["expr:composite_literal"], source_regex: "struct\\s*\\{|type\\s+[A-Za-z_]\\w*\\s+struct"}
+        - id: i_phi_struct
+          kind: condition
+          description: "SSA value is a struct-typed Phi"
+          rule: {all_features: ["ctrl:branch_merge", "expr:composite_literal", "phase:ssa_likely"]}
+        - id: t_target
+          kind: target
+          description: "decomposeStructPhi executes"
+          source: {file: "cmd/compile/internal/ssa/decompose.go", start_line: 1, end_line: 1200}
+      edges:
+        - {from: c_branch_merge, to: i_phi_struct}
+        - {from: c_struct_value, to: i_phi_struct}
+        - {from: i_phi_struct, to: t_target}
+
+  - id: ssa_remove_branch
+    name: "removeBranch"
+    language: go
+    source: {file: "cmd/compile/internal/ssa/prove.go", start_line: 1, end_line: 2200}
+    requirement: "Create contradictory path constraints in nested branches."
+    metadata: {d_min: 10, internal_conditions: 9, component: "ssa"}
+    activation_graph:
+      nodes:
+        - id: c_nested_branches
+          kind: requirement
+          description: "program contains nested conditional branches"
+          rule: {all_features: ["ctrl:branch_merge"], source_regex: "if[\\s\\S]*if"}
+        - id: c_comparisons
+          kind: requirement
+          description: "program uses comparison constraints"
+          rule: {source_regex: "<=|>=|<|>|==|!="}
+        - id: i_prove_contradiction
+          kind: condition
+          description: "prove pass derives a removable branch"
+          rule: {all_features: ["ctrl:branch_merge", "phase:ssa_likely"]}
+        - id: t_target
+          kind: target
+          description: "removeBranch executes"
+          source: {file: "cmd/compile/internal/ssa/prove.go", start_line: 1, end_line: 2200}
+      edges:
+        - {from: c_nested_branches, to: i_prove_contradiction}
+        - {from: c_comparisons, to: i_prove_contradiction}
+        - {from: i_prove_contradiction, to: t_target}
+
+  - id: ssa_decompose_complex_phi
+    name: "decomposeComplexPhi"
+    language: go
+    source: {file: "cmd/compile/internal/ssa/decompose.go", start_line: 1, end_line: 1200}
+    requirement: "Merge complex values across branches and use the merged result."
+    metadata: {d_min: 11, internal_conditions: 4, component: "ssa"}
+    activation_graph:
+      nodes:
+        - id: c_branch_merge
+          kind: requirement
+          description: "branches assign values that merge after control flow"
+          rule: {all_features: ["ctrl:branch_merge"]}
+        - id: c_complex_value
+          kind: requirement
+          description: "merged value has complex type"
+          rule: {all_features: ["type:complex"]}
+        - id: i_phi_complex
+          kind: condition
+          description: "SSA value is a complex-typed Phi"
+          rule: {all_features: ["ctrl:branch_merge", "type:complex", "phase:ssa_likely"]}
+        - id: t_target
+          kind: target
+          description: "decomposeComplexPhi executes"
+          source: {file: "cmd/compile/internal/ssa/decompose.go", start_line: 1, end_line: 1200}
+      edges:
+        - {from: c_branch_merge, to: i_phi_complex}
+        - {from: c_complex_value, to: i_phi_complex}
+        - {from: i_phi_complex, to: t_target}
+
